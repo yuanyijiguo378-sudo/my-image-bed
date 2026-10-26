@@ -1,0 +1,39 @@
+name: Auto Sync Images to Sheets
+
+on:
+  push:
+    paths:
+      - 'images/**'
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Send Webhook to Google Apps Script
+        env:
+          GAS_URL: ${{ secrets.GAS_WEBHOOK_URL }}
+        run: |
+          if [ -z "$GAS_URL" ]; then
+            echo "錯誤：GAS_WEBHOOK_URL 是空的，請檢查 Secret"
+            exit 1
+          fi
+
+          FILES=$(find images -type f ! -name ".*" -exec basename {} \; | jq -R . | jq -s .)
+          PAYLOAD=$(jq -n --argjson files "$FILES" '{files: $files}')
+          echo "送出內容：$PAYLOAD"
+
+          RESPONSE=$(curl -sS -L --fail-with-body \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+            "$GAS_URL")
+
+          echo "GAS 回應：$RESPONSE"
+
+          echo "$RESPONSE" | grep -q '"status":"success"' || {
+            echo "GAS 沒有回傳 success，視為失敗"
+            exit 1
+          }
